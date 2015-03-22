@@ -1,0 +1,222 @@
+---
+title: "Practical Machine Learning Project"
+author: "Antonio Lloris Amor"
+output:
+  html_document:
+    pandoc_args:
+    - +RTS
+    - -K128m
+    - -RTS
+  pdf_document:
+    fig_crop: yes
+    fig_height: 6
+    keep_tex: yes
+    number_sections: yes
+---
+# Introduction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to
+collect a large amount of data about personal activity to predict the manner in
+which they did the exercise ("classe" variable in the training set). One thing
+that people regularly do is quantify how much of a particular activity they do, 
+but they rarely quantify how well they do it.
+
+In this project, our goal will be to use data from four sensors placed in: belt,
+forearm, arm, and dumbell of 6 participants. They were asked to perform barbell
+lifts correctly and incorrectly in 5 different ways.
+
+In this report we are going to describe how we built our model, how we used cross
+validation, what our expected out of sample error is, and why we made the choices
+we did. We will also use our prediction model to predict 20 different test cases. 
+
+# Preprocesing
+
+## Data loading and columns pruning
+
+The fisrt step in our study is to load the data.
+```{r}
+rawData <- read.csv("./OriginalData/pml-training.csv", header = TRUE)
+```
+Our dataset has many columns but we are interested only in columns related with
+"roll", "pitch", "yaw" and "total_accel" from sensors. Why this columns and not
+other, this columns are derivated from x, y and z components from the "magnet",
+"accel" and "gyros" information of the sensors. There are other columns in original
+data set but they are derivated from "roll", "pitch", "yaw" and "total_accel" and
+these columns have many NA's.
+```{r}
+prunedCol <- colnames(rawData)[grep("^roll_|^pitch_|^yaw_|^total_accel_",
+                                    colnames(rawData))]
+studyData <- subset(rawData, select = c("classe",prunedCol))
+summary(studyData)
+```
+The columns used in our study are: `r colnames(studyData)`
+
+## Get training and test sets
+
+For cross validation I going to divide it in two portions with the same size.
+Each portion will be divided in a training and a test set (60% / 40%).
+```{r}
+library(randomForest)
+library(rpart)
+library(lattice)
+library(ggplot2)
+library(caret)
+library(corrplot)
+
+set.seed(260668)
+
+portions <- createDataPartition(y = studyData$classe,
+                                p = 0.5,
+                                list = FALSE)
+Data1 <- studyData[portions,]
+Data2 <- studyData[-portions,]
+
+set.seed(260668)
+
+inTrain <- createDataPartition(y = Data1$classe,
+                               p = 0.6,
+                               list = FALSE)
+trainingData1 <- Data1[inTrain,]
+testingData1 <- Data1[-inTrain,]
+
+set.seed(260668)
+
+inTrain <- createDataPartition(y = Data2$classe,
+                               p = 0.6,
+                               list = FALSE)
+trainingData2 <- Data2[inTrain,]
+testingData2 <- Data2[-inTrain,]
+
+```
+We have two traning sets with `r format(dim(trainingData1)[1], big.mark = ".")` and
+`r format(dim(trainingData2)[1], big.mark = ".")` and two test sets with `r format(dim(testingData1)[1], big.mark = ".")`
+and `r format(dim(testingData2)[1], big.mark = ".")` observations.
+
+## Plotting predictors
+
+In the following graph we can see that there isn't a unique predictor that can
+classify the training data.
+```{r}
+trainingDataU <- rbind(trainingData1,trainingData2)
+
+featurePlot (x = trainingDataU[,-1], y = trainingDataU$classe,
+             plot = "box",
+             labels = c("classe", "acceleration"))
+```
+```{r}
+corrplot(cor(trainingDataU[,-1]), method = "color")
+```
+The previous graph show us that there are correlations between the predictors.
+
+# Prediction
+
+Now I going to use the $traininData1$ and $traininData2$ datasets for training
+process with different method. The training process include a cross validation step.
+
+## Classification Tree
+
+### Training
+```{r}
+set.seed(260668)
+
+modelFit1 <- train(classe ~., data = trainingData1,
+                  method = "rpart",
+                  trControl = trainControl(method = "cv", number = 4))
+modelFit1
+```
+```{r}
+set.seed(260668)
+
+modelFit2 <- train(classe ~., data = trainingData2,
+                  method = "rpart",
+                  trControl = trainControl(method = "cv", number = 4))
+modelFit2
+```
+We can see that the values for $Accuracy$ are very pour.
+
+### Testing
+```{r}
+set.seed(260668)
+
+predictions1 <- predict(modelFit1, newdata=testingData1)
+confusionMatrix(predictions1, testingData1$classe)
+```
+```{r}
+set.seed(260668)
+
+predictions2 <- predict(modelFit2, newdata=testingData2)
+confusionMatrix(predictions2, testingData2$classe)
+```
+
+## Random forest
+
+### Training
+```{r}
+set.seed(260668)
+
+modelFit3 <- train(classe ~., data = trainingData1,
+                  method = "rf",
+                  trControl = trainControl(method = "cv", number = 4))
+modelFit3
+```
+```{r}
+set.seed(260668)
+
+modelFit4 <- train(classe ~., data = trainingData2,
+                  method = "rf",
+                  trControl = trainControl(method = "cv", number = 4))
+modelFit4
+```
+We can see that the values for $Accuracy$ are very pour.
+
+### Testing
+```{r}
+set.seed(260668)
+
+predictions3 <- predict(modelFit3, newdata=testingData1)
+confusionMatrix(predictions3, testingData1$classe)
+```
+```{r}
+set.seed(260668)
+
+predictions4 <- predict(modelFit4, newdata=testingData2)
+confusionMatrix(predictions4, testingData2$classe)
+```
+## In/Out sample error
+
+### In sample error
+
+|        Method       |  Training Set #1  |  Training Set #2  |        Mean       |
+|:--------------------|------------------:|------------------:|------------------:|
+| Classification Tree | `r 1 - 0.5158661` | `r 1 - 0.4223369` | `r 1 - mean(c(0.5158661,0.4223369))` |
+| Random forest       | `r 1 - 0.9702842` | `r 1 - 0.9706062` | `r 1 - mean(c(0.9702842,0.9706062))` |
+
+### Out sample error
+
+|        Method       |  Testing Set #1  |  Testing Set #2  |       Mean       |
+|:--------------------|-----------------:|-----------------:|-----------------:|
+| Classification Tree | `r 1 - 0.5187` | `r 1 -  0.4739` | `r 1 - mean(c(0.5187, 0.4739))` |
+| Random forest       | `r 1 - 0.972` | `r 1 -  0.975` | `r 1 - mean(c(0.972, 0.975))` |
+
+### Conclusion
+
+Out sample error < In sample error, our model don't have overfitting.
+
+# Validation
+
+Now we are goint to use $"pml-testing.csv"$ file for validate our model.
+```{r}
+rawData <- read.csv("./OriginalData/pml-testing.csv", header = TRUE)
+```
+```{r}
+prunedCol <- colnames(rawData)[grep("^roll_|^pitch_|^yaw_|^total_accel_",
+                                    colnames(rawData))]
+validationData <- subset(rawData, select = c(prunedCol))
+```
+```{r}
+set.seed(260668)
+
+predictions4 <- predict(modelFit4, newdata=validationData)
+predictions4
+```
+
